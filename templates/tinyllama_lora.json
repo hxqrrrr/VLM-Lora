@@ -1,0 +1,48 @@
+{
+    "model_name": "TinyLlama/TinyLlama-1.1B-Chat-v0.4",
+    "model_config": {
+        "torch_dtype": "float16",
+        "device_map": "auto",
+        "use_cuda": true,
+        "force_cpu": false,
+        "cuda_device": 0
+    },
+    "lora_config": {
+        "name": "chat_tuning",
+        "task_name": "chat",
+        "r": 16,
+        "lora_alpha": 32,
+        "lora_dropout": 0.1,
+        "use_rslora": false,
+        "use_dora": false,
+        "lora_init": "original",
+        "target_modules": {
+            "gate_proj": true,
+            "up_proj": true,
+            "down_proj": true,
+            "q_proj": true,
+            "k_proj": true,
+            "v_proj": true,
+            "o_proj": true,
+            "dense": false,
+            "fc1": false,
+            "fc2": false,
+            "qkv_proj": false,
+            "gate_up_proj": false,
+            "dense_h_to_4h": false,
+            "dense_4h_to_h": false
+        }
+    },
+    "generation_config": {
+        "max_length": 512,
+        "num_return_sequences": 1,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "do_sample": true
+    },
+    "chat_template": {
+        "system_prompt": "You are a helpful assistant. Please respond in Chinese.",
+        "template": "<|system|>\n{system_prompt}</s>\n<|user|>\n{user_input}</s>\n<|assistant|>\n",
+        "response_split": "<|assistant|>"
+    }
+}
