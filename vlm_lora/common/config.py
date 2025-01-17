@@ -156,23 +156,23 @@ class LoraConfig(AdapterConfig):
     @staticmethod
     def from_config(config: Dict[str, any]) -> "LoraConfig":
         lora_config = LoraConfig(**AdapterConfig.from_config(config).__dict__)
-        lora_config.use_dora_ = config.get("use_dora", False)
-        lora_config.use_rslora_ = config.get("use_rslora", False)
-        lora_config.lora_init_ = config.get("lora_init", "original")
-        lora_config.lora_r_ = config["r"]
-        lora_config.lora_alpha_ = config["lora_alpha"]
-        lora_config.lora_dropout_ = config["lora_dropout"]
+        lora_config.use_dora_ = config.get("use_dora_", False)
+        lora_config.use_rslora_ = config.get("use_rslora_", False)
+        lora_config.lora_init_ = config.get("lora_init_", "original")
+        lora_config.lora_r_ = config["lora_r_"]
+        lora_config.lora_alpha_ = config["lora_alpha_"]
+        lora_config.lora_dropout_ = config["lora_dropout_"]
         lora_config.target_modules_ = copy.deepcopy(lora_target_modules)
-        if isinstance(config["target_modules"], List):
-            for target in config["target_modules"]:
+        if isinstance(config["target_modules_"], List):
+            for target in config["target_modules_"]:
                 if target in lora_target_modules:
                     lora_config.target_modules_[target] = True
-        elif isinstance(config["target_modules"], Dict):
-            for target, value in config["target_modules"].items():
+        elif isinstance(config["target_modules_"], Dict):
+            for target, value in config["target_modules_"].items():
                 if target in lora_target_modules:
                     lora_config.target_modules_[target] = value
         else:
-            raise ValueError("broken config item: target_modules")
+            raise ValueError("broken config item: target_modules_")
 
         return lora_config
 

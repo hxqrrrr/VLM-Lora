@@ -290,6 +290,69 @@ class TinyLLaMAForCausalLM(VLMForCausalLM):
         """应用最终的层归一化"""
         return self.norm_(hidden_states)
 
+    def generate(
+        self,
+        input_ids: torch.LongTensor,
+        max_length: int = 2048,
+        do_sample: bool = True,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        pad_token_id: Optional[int] = None,
+        eos_token_id: Optional[int] = None,
+        **kwargs
+    ) -> torch.LongTensor:
+        """生成文本"""
+        # 设置默认值
+        pad_token_id = pad_token_id if pad_token_id is not None else self.pad_token_id_
+        eos_token_id = eos_token_id if eos_token_id is not None else self.tokenizer.eos_token_id
+        
+        # 确保输入在正确的设备上
+        device = next(self.parameters()).device
+        input_ids = input_ids.to(device)
+        
+        # 初始化生成序列
+        generated_ids = input_ids.clone()
+        batch_size = input_ids.shape[0]
+        cur_length = input_ids.shape[1]
+        
+        # 生成循环
+        while cur_length < max_length:
+            # 获取模型输出
+            outputs = self(generated_ids)
+            next_token_logits = outputs[:, -1, :]
+            
+            # 应用温度
+            if temperature != 1.0:
+                next_token_logits = next_token_logits / temperature
+            
+            # 应用 top_p 采样
+            if do_sample:
+                sorted_logits, sorted_indices = torch.sort(next_token_logits, descending=True)
+                cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                sorted_indices_to_remove = cumulative_probs > top_p
+                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                sorted_indices_to_remove[..., 0] = 0
+                
+                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                next_token_logits[indices_to_remove] = float('-inf')
+                
+                # 采样下一个 token
+                probs = F.softmax(next_token_logits, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1)
+            else:
+                # 贪婪解码
+                next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+            
+            # 添加生成的 token
+            generated_ids = torch.cat([generated_ids, next_token], dim=1)
+            cur_length += 1
+            
+            # 检查是否生成了结束符
+            if eos_token_id is not None and (generated_ids == eos_token_id).any(dim=1).all():
+                break
+                
+        return generated_ids
+
     @classmethod
     def from_pretrained(cls, model_path: str, **kwargs) -> "TinyLLaMAForCausalLM":
         """从预训练模型创建实例"""

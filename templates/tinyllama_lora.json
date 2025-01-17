@@ -2,39 +2,34 @@
     "model_config": {
         "name_or_path_": "TinyLlama/TinyLlama-1.1B-Chat-v0.4",
         "device_": "cuda",
-        "dtype_": "float32",
-        "dim_": 2048,
-        "head_dim_": 64,
-        "n_heads_": 32,
-        "n_kv_heads_": 32,
-        "n_layers_": 22,
-        "intermediate_": 5632,
-        "hidden_act_": "silu",
-        "hidden_dropout_": 0.0,
-        "vocab_size_": 32003,
-        "pad_token_id_": 0,
+        "dtype_": "float16",
         "max_seq_len_": 2048,
-        "rope_theta_": 10000.0,
-        "partial_rotary_factor_": 1.0,
-        "attn_implementation_": "flash_attn"
+        "attn_implementation_": "eager",
+        "dim_": null,
+        "head_dim_": null,
+        "intermediate_": null,
+        "n_heads_": null,
+        "n_kv_heads_": null,
+        "n_layers_": null,
+        "hidden_act_": null,
+        "hidden_dropout_": null,
+        "vocab_size_": null,
+        "pad_token_id_": null,
+        "rope_theta_": null,
+        "partial_rotary_factor_": null
     },
     "lora_config": {
-        "adapter_name": "tinyllama_test",
-        "task_type": "CAUSAL_LM",
-        "use_dora": false,
-        "use_rslora": false,
-        "lora_init": "original",
-        "r": 8,
-        "lora_alpha": 32,
-        "lora_dropout": 0.1,
-        "target_modules": {
-            "self_attn.q_proj": true,
-            "self_attn.v_proj": true,
-            "self_attn.k_proj": false,
-            "self_attn.o_proj": false,
-            "mlp.gate_proj": false,
-            "mlp.up_proj": false,
-            "mlp.down_proj": false
-        }
+        "adapter_name_": "tinyllama_lora",
+        "task_name_": "casual",
+        "lora_r_": 8,
+        "lora_alpha_": 32,
+        "lora_dropout_": 0.1,
+        "use_dora_": false,
+        "use_rslora_": false,
+        "lora_init_": "original",
+        "target_modules_": [
+            "self_attn.q_proj",
+            "self_attn.v_proj"
+        ]
     }
 }
