@@ -7,8 +7,8 @@
 - [x] 支持llama模型
 - [x] 支持clip模型
 - [ ] 数据集
-- [ ] lora
-- [ ] json config配置
+- [x] lora
+- [x] json config配置
 - [ ] 支持llava模型
 - [ ] 多任务并行
 - [ ] 多种lora变体
