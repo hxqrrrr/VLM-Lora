@@ -4,21 +4,25 @@ from .config import (
     VLMModelOutput,
     AdapterConfig,
     LoraConfig,
-    BatchConfig,
 )
 
 from .checkpoint import CHECKPOINT_CLASSES
 
 from .lora import Linear
+from .feedforward import FeedForward
 
 from .abstracts import (
     VLMCache,
     VLMAttention,
     VLMFeedForward,
-    VLMMoeBlock,
     VLMDecoder,
     VLMOutput,
     VLMForCausalLM,
+)
+
+from .attention import (
+    ROPE_INIT_FUNCTIONS,
+    eager_attention_forward,
 )
 
 from .data import InputData, Prompt
@@ -30,17 +34,18 @@ __all__ = [
     "VLMModelOutput",
     "AdapterConfig",
     "LoraConfig",
-    "BatchConfig",
     "CHECKPOINT_CLASSES",
     "Linear",
+    "FeedForward",
     "VLMCache",
     "VLMAttention",
     "VLMFeedForward",
-    "VLMMoeBlock",
     "VLMDecoder",
     "VLMOutput",
     "VLMForCausalLM",
     "InputData",
     "Prompt",
     "Prompter",
+    "ROPE_INIT_FUNCTIONS",
+    "eager_attention_forward",
 ]

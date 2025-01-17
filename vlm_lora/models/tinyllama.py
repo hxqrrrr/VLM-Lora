@@ -1,7 +1,12 @@
+import os
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from typing import List, Optional, Tuple
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from huggingface_hub import snapshot_download
+import urllib3
+
 
 from vlm_lora.common import (
     VLMModelConfig,
@@ -11,139 +16,146 @@ from vlm_lora.common import (
 )
 from vlm_lora.models.base import VLMModel
 
+
+class LlamaRotaryEmbedding(nn.Module):
+    def __init__(self, config, scaling_factor=1.0, rope_type="default"):
+        super().__init__()
+        self.dim = config.head_dim_ if config else 64
+        self.max_position_embeddings = config.max_seq_len_ if config else 2048
+        self.base = config.rope_theta_ if config else 10000
+        self.scaling_factor = scaling_factor
+        self.rope_type = rope_type
+
+    def forward(self, x, position_ids):
+        # 计算频率
+        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2).float() / self.dim))
+        inv_freq = inv_freq.to(x.device)
+        
+        # 计算 sin/cos 值
+        t = position_ids.float().unsqueeze(-1) @ inv_freq.unsqueeze(0)
+        
+        # 扩展维度以匹配注意力头
+        sin = torch.cat([torch.sin(t), torch.sin(t)], dim=-1)
+        cos = torch.cat([torch.cos(t), torch.cos(t)], dim=-1)
+        
+        # 添加必要的维度
+        sin = sin.unsqueeze(1)  # [batch_size, 1, seq_len, head_dim]
+        cos = cos.unsqueeze(1)  # [batch_size, 1, seq_len, head_dim]
+        
+        return cos, sin
+
+
+class LlamaEmbedding(nn.Module):
+    def __init__(self, embedding: torch.Tensor, pad_token: int):
+        super().__init__()
+        self.token_embedding_: torch.Tensor = embedding
+        self.padding_idx_: int = pad_token
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        data = F.embedding(tokens, self.token_embedding_, padding_idx=self.padding_idx_)
+        return data
+
+
+class LlamaRMSNorm(nn.Module):
+    def __init__(self, weight: torch.Tensor, eps: float = 1e-6):
+        super().__init__()
+        self.norm_eps_ = eps
+        self.weight_ = weight
+
+    def forward(self, data: torch.Tensor) -> torch.Tensor:
+        input_dtype = data.dtype
+        v = data.to(torch.float32).pow(2).mean(-1, keepdim=True)
+        data = data * torch.rsqrt(v + self.norm_eps_)
+        return (self.weight_ * data).to(input_dtype)
+
+
 class TinyLLaMAForCausalLM(VLMForCausalLM):
     def __init__(self, config: VLMModelConfig):
         super().__init__()
         self.config_ = config
         
-        # 确保模型文件已下载
-        try:
-            print(f"尝试直接加载模型: {config.name_or_path_}")
-            # 加载预训练模型和分词器
-            self.model = AutoModelForCausalLM.from_pretrained(
-                config.name_or_path_,
-                device_map=config.device_,
-                torch_dtype=config.dtype_,
-                trust_remote_code=True,
-                token=True
-            )
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                config.name_or_path_,
-                trust_remote_code=True,
-                token=True
-            )
-        except Exception as e:
-            print(f"直接加载失败: {str(e)}")
-            print(f"尝试下载模型: {config.name_or_path_}")
-            try:
-                cache_dir = snapshot_download(
-                    repo_id=config.name_or_path_,
-                    token=True
-                )
-                print(f"模型下载成功，缓存位置: {cache_dir}")
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    cache_dir,
-                    device_map=config.device_,
-                    torch_dtype=config.dtype_,
-                    trust_remote_code=True
-                )
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    cache_dir,
-                    trust_remote_code=True
-                )
-            except Exception as download_error:
-                print(f"模型下载失败: {str(download_error)}")
-                raise
+        # 加载预训练模型和分词器
+        self.model = AutoModelForCausalLM.from_pretrained(
+            config.name_or_path_,
+            device_map=config.device_,
+            torch_dtype=config.dtype_,
+            trust_remote_code=True,
+            token=True
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            config.name_or_path_,
+            trust_remote_code=True,
+            token=True
+        )
         
-        print("模型加载成功，开始配置模型参数")
-        # 更新配置
-        self.config_.vocab_size_ = self.model.config.vocab_size
-        self.config_.dim_ = self.model.config.hidden_size
-        self.config_.head_dim_ = self.model.config.hidden_size // self.model.config.num_attention_heads
-        self.config_.intermediate_ = getattr(self.model.config, "intermediate_size", 4 * self.model.config.hidden_size)
-        self.config_.n_heads_ = self.model.config.num_attention_heads
-        self.config_.n_kv_heads_ = getattr(self.model.config, "num_key_value_heads", self.model.config.num_attention_heads)
-        self.config_.n_layers_ = self.model.config.num_hidden_layers
-        self.config_.hidden_act_ = getattr(self.model.config, "hidden_act", "silu")
-        self.config_.hidden_dropout_ = getattr(self.model.config, "dropout", 0.0)  # LLaMA 使用 dropout
-        self.config_.pad_token_id_ = getattr(self.model.config, "pad_token_id", 0)
-        self.config_.rope_theta_ = getattr(self.model.config, "rope_theta", 10000.0)
-        self.config_.partial_rotary_factor_ = getattr(self.model.config, "partial_rotary_factor", 1.0)
-        self.config_.max_seq_len_ = getattr(self.model.config, "max_position_embeddings", 2048)
+        # 保存配置到实例变量
+        self.vocab_size_ = self.model.config.vocab_size
+        self.hidden_size_ = self.model.config.hidden_size
+        self.num_attention_heads_ = self.model.config.num_attention_heads
+        self.num_hidden_layers_ = self.model.config.num_hidden_layers
+        self.pad_token_id_ = getattr(self.model.config, "pad_token_id", 0)
         
-        print("配置参数详情:")
-        print(f"- vocab_size: {self.config_.vocab_size_}")
-        print(f"- hidden_size: {self.config_.dim_}")
-        print(f"- num_attention_heads: {self.config_.n_heads_}")
-        print(f"- num_hidden_layers: {self.config_.n_layers_}")
-        print(f"- max_seq_len: {self.config_.max_seq_len_}")
+        # 初始化组件
+        self.embed_tokens_ = LlamaEmbedding(
+            self.model.model.embed_tokens.weight,
+            self.pad_token_id_
+        )
+        self.norm_ = LlamaRMSNorm(
+            self.model.model.norm.weight,
+            self.model.config.rms_norm_eps
+        )
+        self.rotary_emb_ = LlamaRotaryEmbedding(
+            config=None,
+            scaling_factor=1.0,
+            rope_type="default"
+        )
+        self.lm_head_ = self.model.lm_head
+        self.layers_ = self.model.model.layers
+
+    def forward(self, hidden_states: torch.Tensor, attention_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """前向传播，完全手动实现处理流程"""
+        # 获取输入的形状信息
+        batch_size, seq_length = hidden_states.shape[:2]
         
-        # 保存一些常用的配置到实例变量
-        self.vocab_size_ = self.config_.vocab_size_
-        self.hidden_size_ = self.config_.dim_
-        self.num_attention_heads_ = self.config_.n_heads_
-        self.num_hidden_layers_ = self.config_.n_layers_
-        self.pad_token_id_ = self.config_.pad_token_id_
+        # 生成位置编码的位置 ID
+        position_ids = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device)
+        position_ids = position_ids.unsqueeze(0).expand(batch_size, -1)
+        
+        # 获取 RoPE 位置编码
+        cos, sin = self.rotary_embed(hidden_states, position_ids)
+        
+        # 通过解码器层
+        for layer in self.decoder_stack():
+            # 设置 RoPE 编码
+            layer.self_attn.rotary_emb = lambda *args, **kwargs: (cos, sin)
+            # 前向传播
+            hidden_states = layer(hidden_states, attention_mask=attention_mask)[0]
+        
+        # 最终的归一化
+        hidden_states = self.norm(hidden_states)
         
         # 语言模型头
-        self.lm_head_ = self.model.lm_head
-        print("模型参数配置完成")
+        logits = self.lm_head_(hidden_states)
+        
+        return logits
 
     def embed_tokens(self, input_ids: torch.Tensor) -> torch.Tensor:
         """将输入的 token ID 转换为词嵌入"""
-        return self.model.model.embed_tokens(input_ids)
+        return self.embed_tokens_(input_ids)
 
     def rotary_embed(
         self, input_tensor: torch.Tensor, position_ids: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """TinyLLaMA 使用 RoPE 位置编码"""
-        # 获取 RoPE 编码的参数
-        head_dim = self.hidden_size_ // self.num_attention_heads_
-        base = 10000.0
-        inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2).float() / head_dim))
-        
-        # 计算 sin/cos 值
-        t = position_ids.float().unsqueeze(-1) @ inv_freq.to(position_ids.device).unsqueeze(0)
-        sin = torch.sin(t).unsqueeze(-2)
-        cos = torch.cos(t).unsqueeze(-2)
-        
-        # 将 sin/cos 移动到正确的设备
-        sin = sin.to(device=input_tensor.device)
-        cos = cos.to(device=input_tensor.device)
-        
-        return sin, cos
+        """获取 RoPE 位置编码"""
+        return self.rotary_emb_(input_tensor, position_ids)
 
     def decoder_stack(self) -> List[VLMDecoder]:
         """返回解码器层的列表"""
-        return self.model.model.layers
+        return self.layers_
 
     def norm(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """应用最终的层归一化"""
-        return self.model.model.norm(hidden_states)
-
-    def causal_mask(
-        self,
-        attention_mask: torch.Tensor,
-        input_tensor: torch.Tensor,
-        cache_position: torch.Tensor,
-        past_key_values: Optional[VLMCache],
-    ) -> torch.Tensor:
-        """生成因果注意力掩码"""
-        batch_size, seq_length = input_tensor.shape[:2]
-        
-        # 创建因果掩码
-        causal_mask = torch.triu(
-            torch.ones((seq_length, seq_length), dtype=torch.bool, device=input_tensor.device),
-            diagonal=1,
-        )
-        causal_mask = causal_mask.unsqueeze(0).expand(batch_size, -1, -1)
-        
-        # 如果提供了注意力掩码，则与因果掩码组合
-        if attention_mask is not None:
-            attention_mask = attention_mask.unsqueeze(1)
-            causal_mask = causal_mask & attention_mask
-            
-        return causal_mask
+        return self.norm_(hidden_states)
 
     @classmethod
     def from_pretrained(cls, model_path: str, **kwargs) -> "TinyLLaMAForCausalLM":

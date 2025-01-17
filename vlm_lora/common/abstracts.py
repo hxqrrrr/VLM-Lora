@@ -152,25 +152,6 @@ class VLMOutput(metaclass=ABCMeta):
         pass
 
 
-class VLMOutput(metaclass=ABCMeta):
-    @classmethod
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
-        return {}
-
-    @classmethod
-    def forward(self, data: torch.Tensor) -> torch.Tensor:
-        pass
-
-    @classmethod
-    def loss(
-        self,
-        input_ids: torch.Tensor,
-        output_logits: torch.Tensor,
-        labels: List[List[int]],
-    ) -> torch.Tensor:
-        pass
-
-
 class VLMForCausalLM(torch.nn.Module):
     def __init__(self):
         super().__init__()

@@ -1,48 +1,35 @@
 {
-    "model_name": "TinyLlama/TinyLlama-1.1B-Chat-v0.4",
     "model_config": {
-        "torch_dtype": "float16",
-        "device_map": "auto",
-        "use_cuda": true,
-        "force_cpu": false,
-        "cuda_device": 0
+        "name_or_path_": "TinyLlama/TinyLlama-1.1B-Chat-v0.4",
+        "device_": "cuda",
+        "dtype_": "float32",
+        "dim_": 2048,
+        "head_dim_": 64,
+        "n_heads_": 32,
+        "n_kv_heads_": 32,
+        "n_layers_": 22,
+        "intermediate_": 5632,
+        "hidden_act_": "silu",
+        "hidden_dropout_": 0.0,
+        "vocab_size_": 32003,
+        "pad_token_id_": 0,
+        "max_seq_len_": 2048,
+        "rope_theta_": 10000.0,
+        "partial_rotary_factor_": 1.0,
+        "attn_implementation_": "flash_attn"
     },
     "lora_config": {
-        "name": "chat_tuning",
-        "task_name": "chat",
-        "r": 16,
+        "name": "tinyllama_test",
+        "task_name": "casual",
+        "use_dora": false,
+        "use_rslora": false,
+        "lora_init": "original",
+        "r": 8,
         "lora_alpha": 32,
         "lora_dropout": 0.1,
-        "use_rslora": false,
-        "use_dora": false,
-        "lora_init": "original",
-        "target_modules": {
-            "gate_proj": true,
-            "up_proj": true,
-            "down_proj": true,
-            "q_proj": true,
-            "k_proj": true,
-            "v_proj": true,
-            "o_proj": true,
-            "dense": false,
-            "fc1": false,
-            "fc2": false,
-            "qkv_proj": false,
-            "gate_up_proj": false,
-            "dense_h_to_4h": false,
-            "dense_4h_to_h": false
-        }
-    },
-    "generation_config": {
-        "max_length": 512,
-        "num_return_sequences": 1,
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "do_sample": true
-    },
-    "chat_template": {
-        "system_prompt": "You are a helpful assistant. Please respond in Chinese.",
-        "template": "<|system|>\n{system_prompt}</s>\n<|user|>\n{user_input}</s>\n<|assistant|>\n",
-        "response_split": "<|assistant|>"
+        "target_modules": [
+            "q_proj",
+            "v_proj"
+        ]
     }
 }
