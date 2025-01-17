@@ -1,7 +1,8 @@
-from abc import ABCMeta
+from abc import ABCMeta, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
+import torch.nn as nn
 
 from .config import VLMModelConfig, VLMModelInput
 
@@ -51,40 +52,27 @@ class VLMCache(torch.nn.Module):
             )
 
 
-class VLMAttention(metaclass=ABCMeta):
-    @classmethod
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
-        return {}
-
-    @classmethod
+class VLMAttention(nn.Module):
+    def __init__(self):
+        super().__init__()
+    
     def forward(
         self,
         hidden_states: torch.Tensor,
-        input_args: VLMModelInput,
-        rotary_emb: Tuple[torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor] = None,
-        cache_position: Optional[torch.Tensor] = None,
-        past_key_value: Optional[VLMCache] = None,
-    ):
-        pass
+        output_attentions: Optional[bool] = False,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """前向传播方法"""
+        raise NotImplementedError
 
 
-class VLMFeedForward(metaclass=ABCMeta):
-    @classmethod
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
-        return {}
-
-    @classmethod
-    def _batch_forward(
-        self, hidden_states: torch.Tensor, input_args: VLMModelInput
-    ) -> torch.Tensor:
-        pass
-
-    @classmethod
-    def _lora_forward(
-        self, lora_name: str, act_fn: torch.nn.Module, data: torch.Tensor
-    ) -> torch.Tensor:
-        pass
+class VLMFeedForward(nn.Module):
+    def __init__(self):
+        super().__init__()
+    
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """前向传播方法"""
+        raise NotImplementedError
 
 
 class VLMMoeBlock(metaclass=ABCMeta):

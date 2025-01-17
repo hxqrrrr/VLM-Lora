@@ -139,16 +139,20 @@ class CLIPAttention(nn.Module):
         attention_scores = torch.matmul(query, key.transpose(-2, -1)) * self.scale_
 
         if causal_attention_mask is not None:
-            attention_scores = attention_scores.masked_fill(
-                causal_attention_mask.unsqueeze(1).unsqueeze(2),
-                float("-inf"),
-            )
+            # causal_attention_mask: [batch_size, seq_length, seq_length]
+            # 需要扩展到注意力头的维度，并确保是布尔类型
+            causal_attention_mask = causal_attention_mask.bool()
+            causal_attention_mask = causal_attention_mask.unsqueeze(1)  # [batch_size, 1, seq_length, seq_length]
+            attention_scores = attention_scores.masked_fill(causal_attention_mask, float("-inf"))
 
         if attention_mask is not None:
-            attention_scores = attention_scores.masked_fill(
-                attention_mask.unsqueeze(1).unsqueeze(2),
-                float("-inf"),
-            )
+            # attention_mask: [batch_size, seq_length]
+            # 需要扩展到正确的维度，并确保是布尔类型
+            # 注意：原始attention_mask中0表示需要mask的位置，1表示有效位置
+            # 所以我们需要将其取反后再转为布尔值
+            attention_mask = (1 - attention_mask).bool()
+            attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)  # [batch_size, 1, 1, seq_length]
+            attention_scores = attention_scores.masked_fill(attention_mask, float("-inf"))
 
         attention_probs = F.softmax(attention_scores, dim=-1)
         hidden_states = torch.matmul(attention_probs, value)
@@ -373,9 +377,11 @@ class CLIPTextTransformer(nn.Module):
         }
 
     def _build_causal_attention_mask(self, batch_size: int, seq_length: int) -> torch.Tensor:
-        mask = torch.empty(batch_size, seq_length, seq_length)
-        mask.fill_(float("-inf"))
-        mask.triu_(1)
+        # 创建上三角矩阵作为掩码（True表示需要mask的位置）
+        mask = torch.ones((seq_length, seq_length), dtype=torch.bool)
+        mask = torch.triu(mask, diagonal=1)
+        # 扩展到batch维度
+        mask = mask.unsqueeze(0).expand(batch_size, -1, -1)
         return mask
 
 
@@ -434,57 +440,42 @@ class CLIPModel(nn.Module):
         input_ids: Optional[torch.LongTensor] = None,
         pixel_values: Optional[torch.FloatTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
-        return_loss: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, Dict]:
-        vision_outputs = self.vision_model_(
-            pixel_values=pixel_values,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-
-        text_outputs = self.text_model_(
+        return_loss: bool = False,
+        return_dict: bool = True,
+    ) -> Dict[str, torch.Tensor]:
+        # 获取文本特征
+        text_features = self.get_text_features(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
+            return_dict=True,
         )
+        text_features = F.normalize(text_features, dim=-1)
 
-        image_embeds = vision_outputs["pooled_output"] if isinstance(vision_outputs, dict) else vision_outputs[1]
-        text_embeds = text_outputs["pooled_output"] if isinstance(text_outputs, dict) else text_outputs[1]
+        # 获取图像特征
+        image_features = self.get_image_features(
+            pixel_values=pixel_values,
+            return_dict=True,
+        )
+        image_features = F.normalize(image_features, dim=-1)
 
-        # normalized features
-        image_features = self.visual_projection_(image_embeds)
-        text_features = self.text_projection_(text_embeds)
-
-        image_features = image_features / image_features.norm(dim=1, keepdim=True)
-        text_features = text_features / text_features.norm(dim=1, keepdim=True)
-
-        # cosine similarity as logits
+        # 计算相似度分数
         logit_scale = self.logit_scale_.exp()
-        logits_per_image = logit_scale * image_features @ text_features.t()
-        logits_per_text = logits_per_image.t()
+        logits_per_text = torch.matmul(text_features, image_features.t()) * logit_scale
+        logits_per_image = logits_per_text.t()
 
         loss = None
         if return_loss:
             loss = clip_loss(logits_per_text)
 
         if not return_dict:
-            output = (logits_per_image, logits_per_text, text_embeds, image_embeds, text_outputs, vision_outputs)
-            return ((loss,) + output) if loss is not None else output
+            return (logits_per_text, logits_per_image, text_features, image_features, loss)
 
         return {
-            "loss": loss,
-            "logits_per_image": logits_per_image,
             "logits_per_text": logits_per_text,
-            "text_embeds": text_embeds,
-            "image_embeds": image_embeds,
-            "text_model_output": text_outputs,
-            "vision_model_output": vision_outputs,
+            "logits_per_image": logits_per_image,
+            "text_features": text_features,
+            "image_features": image_features,
+            "loss": loss,
         }
 
     @staticmethod
@@ -557,6 +548,22 @@ class CLIPModel(nn.Module):
 
 
 def clip_loss(similarity: torch.Tensor) -> torch.Tensor:
-    caption_loss = F.cross_entropy(similarity, torch.arange(similarity.shape[0], device=similarity.device))
-    image_loss = F.cross_entropy(similarity.t(), torch.arange(similarity.shape[0], device=similarity.device))
-    return (caption_loss + image_loss) / 2.0
+    """计算 CLIP 对比损失
+    
+    Args:
+        similarity: 形状为 [num_texts, num_images] 的相似度矩阵
+        
+    Returns:
+        平均对比损失
+    """
+    num_texts, num_images = similarity.shape
+    
+    # 对于每个文本，目标是匹配的图像索引
+    text_labels = torch.arange(num_images, device=similarity.device)
+    text_loss = F.cross_entropy(similarity, text_labels)
+    
+    # 对于每个图像，目标是匹配的文本索引
+    image_labels = torch.arange(num_texts, device=similarity.device)
+    image_loss = F.cross_entropy(similarity.t(), image_labels)
+    
+    return (text_loss + image_loss) / 2.0
