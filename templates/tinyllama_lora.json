@@ -19,17 +19,22 @@
         "attn_implementation_": "flash_attn"
     },
     "lora_config": {
-        "name": "tinyllama_test",
-        "task_name": "casual",
+        "adapter_name": "tinyllama_test",
+        "task_type": "CAUSAL_LM",
         "use_dora": false,
         "use_rslora": false,
         "lora_init": "original",
         "r": 8,
         "lora_alpha": 32,
         "lora_dropout": 0.1,
-        "target_modules": [
-            "q_proj",
-            "v_proj"
-        ]
+        "target_modules": {
+            "self_attn.q_proj": true,
+            "self_attn.v_proj": true,
+            "self_attn.k_proj": false,
+            "self_attn.o_proj": false,
+            "mlp.gate_proj": false,
+            "mlp.up_proj": false,
+            "mlp.down_proj": false
+        }
     }
 }
