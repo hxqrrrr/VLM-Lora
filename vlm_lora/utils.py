@@ -8,7 +8,11 @@ from packaging import version
 
 
 def copy_parameters(source: torch.nn.Module, dest: torch.nn.Module):
-    dest.load_state_dict(source.state_dict())
+    # 获取目标模块的设备
+    device = next(dest.parameters()).device if list(dest.parameters()) else torch.device('cpu')
+    # 将源模块的状态字典复制到目标设备上
+    state_dict = {k: v.to(device) for k, v in source.state_dict().items()}
+    dest.load_state_dict(state_dict)
     dest.requires_grad_(False)
 
 

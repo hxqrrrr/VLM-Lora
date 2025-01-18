@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers.models.clip import modeling_clip
-
+import re
 from vlm_lora.common import (
     FeedForward,
     Linear,
@@ -19,8 +19,10 @@ from vlm_lora.common import (
     VLMForCausalLM,
     VLMModelConfig,
     VLMModelInput,
+    LoraConfig,
     eager_attention_forward,
 )
+from vlm_lora.adapters.lora.lora import LoraLayer
 from vlm_lora.executors import executor
 from vlm_lora.utils import copy_parameters
 
@@ -426,7 +428,7 @@ class CLIPModel(nn.Module):
             truncation=True,
             max_length=self.config_.max_position_embeddings_,
             return_tensors="pt"
-        ).to(self.visual_projection_.weight.device)
+        ).to(next(self.parameters()).device)
         
         text_outputs = self.text_model_(
             input_ids=text_inputs.input_ids,
@@ -568,6 +570,88 @@ class CLIPModel(nn.Module):
         model.logit_scale_.data.copy_(clip_model.logit_scale)
 
         return model
+
+    def add_lora_layers(self, config: LoraConfig) -> None:
+        """添加LoRA层到模型中"""
+        print("\n=== 开始添加LoRA层 ===")
+        
+        def _replace_module(model: nn.Module, full_name: str, module: nn.Module) -> None:
+            if isinstance(module, nn.Linear):
+                for target_name, should_add in config.target_modules_.items():
+                    if not should_add:
+                        continue
+                        
+                    # 处理通配符匹配
+                    if "*" in target_name:
+                        pattern = target_name.replace("*", "\\d+")
+                        if re.match(pattern, full_name):
+                            print(f"替换模块: {full_name}")
+                            return LoraLayer(
+                                base_layer=module,
+                                config=config,
+                                device=next(module.parameters()).device
+                            )
+                    # 精确匹配
+                    elif target_name == full_name:
+                        print(f"替换模块: {full_name}")
+                        return LoraLayer(
+                            base_layer=module,
+                            config=config,
+                            device=next(module.parameters()).device
+                        )
+            return module
+
+        def _recursive_replace(model: nn.Module, prefix: str = "") -> None:
+            for name, child in model.named_children():
+                full_name = f"{prefix}{name}"
+                if list(child.children()):
+                    _recursive_replace(child, full_name + "_")
+                else:
+                    new_module = _replace_module(model, full_name, child)
+                    if new_module is not child:
+                        setattr(model, name, new_module)
+
+        # 开始递归替换
+        _recursive_replace(self)
+        print("=== LoRA层添加完成 ===\n")
+    
+    def freeze_base_model(self):
+        """冻结基础模型参数，只训练LoRA层"""
+        for param in self.parameters():
+            param.requires_grad = False
+            
+        # 只训练LoRA层的参数
+        for module in self.modules():
+            if isinstance(module, LoraLayer):
+                for param in module.parameters():
+                    param.requires_grad = True
+    
+    def save_lora_weights(self, save_dir: str):
+        """保存LoRA权重
+        
+        Args:
+            save_dir: 保存目录
+        """
+        lora_state_dict = {}
+        for name, module in self.named_modules():
+            if isinstance(module, LoraLayer):
+                lora_state_dict[f"{name}.lora_A.weight"] = module.lora_A.weight.data
+                lora_state_dict[f"{name}.lora_B.weight"] = module.lora_B.weight.data
+        
+        os.makedirs(save_dir, exist_ok=True)
+        torch.save(lora_state_dict, os.path.join(save_dir, "lora_weights.pt"))
+    
+    def load_lora_weights(self, weights_path: str):
+        """加载LoRA权重
+        
+        Args:
+            weights_path: 权重文件路径
+        """
+        lora_state_dict = torch.load(weights_path)
+        for name, module in self.named_modules():
+            if isinstance(module, LoraLayer):
+                module.lora_A.weight.data = lora_state_dict[f"{name}.lora_A.weight"]
+                module.lora_B.weight.data = lora_state_dict[f"{name}.lora_B.weight"]
 
 
 def clip_loss(similarity: torch.Tensor) -> torch.Tensor:

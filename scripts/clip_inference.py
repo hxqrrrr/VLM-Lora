@@ -11,27 +11,28 @@ from transformers.utils import WEIGHTS_NAME, CONFIG_NAME
 
 def main():
     # 加载配置
-    with open("templates/clip.json", "r") as f:
-        config_dict = json.load(f)
+    config_json_path = "templates/clip.json"
+    model_config = CLIPConfig.from_json(config_json_path)
     
     # 获取模型名称和设备
-    model_name = config_dict["model_config"]["name_or_path_"]
-    device = config_dict["model_config"]["device_"]
+    model_name = model_config.name_or_path_
+    device = model_config.device_
     
     # 检查本地缓存
     cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
-    model_cache = os.path.join(cache_dir, model_name.replace("/", "--"))
+    model_cache = os.path.join(cache_dir, "models--" + model_name.replace("/", "--"))
     
+    print(f"检查缓存路径: {model_cache}")
+    print(f"缓存路径是否存在: {os.path.exists(model_cache)}")
     if os.path.exists(model_cache):
-        print(f"使用本地缓存的模型: {model_cache}")
-        hf_config = HFCLIPConfig.from_pretrained(model_cache)
-        tokenizer = CLIPTokenizer.from_pretrained(model_cache)
-        pretrained_model = HFCLIPModel.from_pretrained(model_cache)
-    else:
-        print(f"从HuggingFace下载模型: {model_name}")
-        hf_config = HFCLIPConfig.from_pretrained(model_name)
-        tokenizer = CLIPTokenizer.from_pretrained(model_name)
-        pretrained_model = HFCLIPModel.from_pretrained(model_name)
+        print(f"缓存目录内容:")
+        for file in os.listdir(model_cache):
+            print(f"  - {file}")
+    
+    print(f"从HuggingFace加载模型: {model_name}")
+    hf_config = HFCLIPConfig.from_pretrained(model_name)
+    tokenizer = CLIPTokenizer.from_pretrained(model_name)
+    pretrained_model = HFCLIPModel.from_pretrained(model_name)
     
     # 创建本地模型配置
     model_config = CLIPConfig(
@@ -55,7 +56,7 @@ def main():
     )
     
     # 加载数据集配置
-    dataset_config = DatasetConfig(**config_dict["dataset_config"])
+    dataset_config = DatasetConfig.from_json(config_json_path)
     
     # 创建数据集
     dataset = DatasetFactory.create_dataset(dataset_config, split="test")

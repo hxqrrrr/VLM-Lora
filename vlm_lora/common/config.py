@@ -2,7 +2,7 @@ import copy
 import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, TypeAlias, Union
-
+import json
 import torch
 
 Tokens: TypeAlias = List[int]
@@ -128,56 +128,13 @@ lora_target_modules = {
 @dataclass
 class LoraConfig(AdapterConfig):
     # Weight-Decomposed Low-Rank Adaptation
+    lora_r_: int = 8
+    lora_alpha_: int = 16
+    lora_dropout_: float = 0.0
     use_dora_: bool = False
-    # Rank-Stabilized LoRA
-    # sets the adapter scaling factor to `alpha/math.sqrt(r)`
     use_rslora_: bool = False
-    # can be original or gaussian
     lora_init_: str = "original"
-    lora_r_: int = None
-    lora_alpha_: int = None
-    lora_dropout_: float = None
-    target_modules_: Dict[str, bool] = None
-
-    def check(self) -> "LoraConfig":
-        assert isinstance(self.use_dora_, bool)
-        assert isinstance(self.use_rslora_, bool)
-        assert isinstance(self.lora_init_, str) and self.lora_init_ in [
-            "original",
-            "gaussian",
-        ]
-        assert isinstance(self.lora_r_, int) and self.lora_r_ > 0
-        assert isinstance(self.lora_alpha_, int) and self.lora_alpha_ > 0
-        assert isinstance(self.lora_dropout_, float) and self.lora_dropout_ >= 0
-        assert isinstance(self.target_modules_, Dict)
-        for key, value in self.target_modules_.items():
-            assert isinstance(key, str) and len(key) > 0
-            assert isinstance(value, bool)
-
-        return self
-
-    @staticmethod
-    def from_config(config: Dict[str, any]) -> "LoraConfig":
-        lora_config = LoraConfig(**AdapterConfig.from_config(config).__dict__)
-        lora_config.use_dora_ = config.get("use_dora_", False)
-        lora_config.use_rslora_ = config.get("use_rslora_", False)
-        lora_config.lora_init_ = config.get("lora_init_", "original")
-        lora_config.lora_r_ = config["lora_r_"]
-        lora_config.lora_alpha_ = config["lora_alpha_"]
-        lora_config.lora_dropout_ = config["lora_dropout_"]
-        lora_config.target_modules_ = copy.deepcopy(lora_target_modules)
-        if isinstance(config["target_modules_"], List):
-            for target in config["target_modules_"]:
-                if target in lora_target_modules:
-                    lora_config.target_modules_[target] = True
-        elif isinstance(config["target_modules_"], Dict):
-            for target, value in config["target_modules_"].items():
-                if target in lora_target_modules:
-                    lora_config.target_modules_[target] = value
-        else:
-            raise ValueError("broken config item: target_modules_")
-
-        return lora_config
+    target_modules_: Dict[str, bool] = field(default_factory=dict)
 
     def export(self) -> Dict[str, any]:
         config = {}
@@ -195,6 +152,37 @@ class LoraConfig(AdapterConfig):
             if value:
                 tgt_list.append(target)
         config["target_modules"] = tgt_list
-
         return config
-
+    
+    @staticmethod
+    def from_config(config: Dict[str, any]) -> "LoraConfig":
+        lora_config = LoraConfig()
+        
+        # 基础配置
+        lora_config.adapter_name_ = config.get("adapter_name_", "")
+        lora_config.task_name_ = config.get("task_name_", "casual")
+        
+        # LoRA参数
+        lora_config.lora_r_ = config.get("lora_r_", 8)
+        lora_config.lora_alpha_ = config.get("lora_alpha_", 16)
+        lora_config.lora_dropout_ = config.get("lora_dropout_", 0.0)
+        
+        # 特殊功能开关
+        lora_config.use_dora_ = config.get("use_dora_", False)
+        lora_config.use_rslora_ = config.get("use_rslora_", False)
+        lora_config.lora_init_ = config.get("lora_init_", "original")
+        
+        # 处理目标模块
+        target_modules = config.get("target_modules_", [])
+        if isinstance(target_modules, list):
+            lora_config.target_modules_ = {module: True for module in target_modules}
+        else:
+            lora_config.target_modules_ = target_modules
+        
+        return lora_config
+    
+    @staticmethod
+    def from_json(json_path: str) -> "LoraConfig":
+        with open(json_path, "r") as f:
+            config_dict = json.load(f)
+        return LoraConfig.from_config(config_dict.get("lora_config", {}))

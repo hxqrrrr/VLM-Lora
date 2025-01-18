@@ -9,5 +9,27 @@
         "dataset_type_": "image_text_pair",
         "image_size_": 224,
         "max_length_": 77
+    },
+    "lora_config": {
+        "adapter_name_": "clip-lora",
+        "task_name_": "dtd",
+        "lora_r_": 8,
+        "lora_alpha_": 16,
+        "lora_dropout_": 0.1,
+        "use_dora_": false,
+        "use_rslora_": false,
+        "lora_init_": "original",
+        "target_modules_": {
+            "vision_model_.encoder_.layers_.*.self_attn_.q_proj_": true,
+            "vision_model_.encoder_.layers_.*.self_attn_.v_proj_": true,
+            "text_model_.encoder_.layers_.*.self_attn_.q_proj_": true,
+            "text_model_.encoder_.layers_.*.self_attn_.v_proj_": true,
+            "visual_projection_": true,
+            "text_projection_": true,
+            "vision_model_.encoder_.layers_.*.self_attn_.k_proj_": false,
+            "vision_model_.encoder_.layers_.*.self_attn_.out_proj_": false,
+            "text_model_.encoder_.layers_.*.self_attn_.k_proj_": false,
+            "text_model_.encoder_.layers_.*.self_attn_.out_proj_": false
+        }
     }
 }
