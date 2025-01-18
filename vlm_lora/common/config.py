@@ -1,7 +1,7 @@
 import copy
 import os
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, TypeAlias, Union
+from typing import Any, Callable, Dict, List, Optional, TypeAlias, Union
 
 import torch
 
@@ -58,6 +58,9 @@ class VLMModelConfig:
     # data type
     dtype_: torch.dtype = None
 
+    @classmethod
+    def from_json(cls, json_data: Dict[str, Any]) -> "VLMModelConfig":
+        raise NotImplementedError("Subclasses must implement this method.")
 
 
 @dataclass

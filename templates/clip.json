@@ -1,0 +1,13 @@
+{
+    "model_config": {
+        "name_or_path_": "openai/clip-vit-base-patch32",
+        "device_": "cuda"
+    },
+    "dataset_config": {
+        "dataset_name_": "DTD",
+        "dataset_path_": "data/dtd",
+        "dataset_type_": "image_text_pair",
+        "image_size_": 224,
+        "max_length_": 77
+    }
+}

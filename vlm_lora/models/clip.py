@@ -1,3 +1,5 @@
+import math
+import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -44,7 +46,12 @@ class CLIPConfig(VLMModelConfig):
     
     # 投影头配置
     projection_dim_: int = 512
-
+    @classmethod
+    def from_json(cls, json_file: str) -> "CLIPConfig":
+        """从JSON文件加载配置"""
+        with open(json_file, "r") as f:
+            config = json.load(f)
+        return cls(**config.get("model_config", {}))
 
 class CLIPVisionEmbeddings(nn.Module):
     def __init__(self, config: CLIPConfig):
@@ -396,18 +403,34 @@ class CLIPModel(nn.Module):
         self.visual_projection_ = nn.Linear(config.vision_embed_dim_, config.projection_dim_, bias=False)
         self.text_projection_ = nn.Linear(config.text_embed_dim_, config.projection_dim_, bias=False)
         self.logit_scale_ = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        
+        # 初始化tokenizer为None，等待外部设置
+        self.tokenizer_ = None
 
     def get_text_features(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
+        texts: Union[str, List[str]],
         attention_mask: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> torch.FloatTensor:
+        # 确保texts是列表
+        if isinstance(texts, str):
+            texts = [texts]
+            
+        # 使用CLIP tokenizer处理文本
+        text_inputs = self.tokenizer_(
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=self.config_.max_position_embeddings_,
+            return_tensors="pt"
+        ).to(self.visual_projection_.weight.device)
+        
         text_outputs = self.text_model_(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+            input_ids=text_inputs.input_ids,
+            attention_mask=text_inputs.attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,

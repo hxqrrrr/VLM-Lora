@@ -31,5 +31,12 @@
             "self_attn.q_proj",
             "self_attn.v_proj"
         ]
+    },
+    "dataset_config": {
+        "dataset_name_": "DTD",
+        "dataset_path_": "data/dtd",
+        "dataset_type_": "image_text_pair",
+        "image_size_": 224,
+        "max_length_": 77
     }
 }

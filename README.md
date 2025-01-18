@@ -6,7 +6,7 @@
 
 - [x] 支持llama模型
 - [x] 支持clip模型
-- [ ] 数据集
+- [x] 数据集
 - [x] lora
 - [x] json config配置
 - [ ] 支持llava模型
