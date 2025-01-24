@@ -96,19 +96,17 @@ class VLMMoeBlock(metaclass=ABCMeta):
         pass
 
 
-class VLMDecoder(metaclass=ABCMeta):
+class VLMDecoder(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.self_attn_: VLMAttention = None
         self.mlp_: VLMFeedForward = None
 
-    @classmethod
     def state_dict(
         self,
     ) -> Tuple[Dict[str, torch.nn.Module], Dict[str, torch.nn.Module]]:
         return {}
 
-    @classmethod
     def forward(
         self,
         hidden_states: torch.Tensor,
