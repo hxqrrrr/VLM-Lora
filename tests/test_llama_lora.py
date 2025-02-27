@@ -64,19 +64,14 @@ def main():
     
     # 编码
     inputs = tokenizer(combined_text, return_tensors="pt", truncation=True, max_length=model_config.max_seq_len_)
-    input_ids = inputs["input_ids"].to(device)
-    attention_mask = inputs["attention_mask"].to(device)
-    
+    input_ids = inputs["input_ids"].to(device) 
+    attention_mask = inputs["attention_mask"].to(device)  
+
     # 创建标签序列（shifted right）
     labels = input_ids.clone()
     labels[:, :-1] = input_ids[:, 1:]  # 每个位置预测下一个token
     labels[:, -1] = -100  # 忽略最后一个位置的预测
-    
-    print(f"\n输入形状: {input_ids.shape}")
-    print(f"标签形状: {labels.shape}")
-    
-    # 训练一步
-    print("\n执行一步训练...")
+   
     model.train()
     
     # 确保 LoRA 参数可训练
@@ -91,15 +86,15 @@ def main():
         input_ids=input_ids,
         attention_mask=attention_mask
     )
-    print(f"输出形状: {outputs.shape}")
-    
+
+    # 检查输出张量的 requires_grad 属性
+    print(f"输出张量是否需要梯度: {outputs.requires_grad}")  # 应该输出 True
+
     # 计算损失
     shift_logits = outputs[:, :-1, :].contiguous()
     shift_labels = labels[:, :-1].contiguous()
-    
-    print(f"处理后的logits形状: {shift_logits.shape}")
-    print(f"处理后的labels形状: {shift_labels.shape}")
-    
+
+
     loss_fct = torch.nn.CrossEntropyLoss()
     loss = loss_fct(
         shift_logits.reshape(-1, shift_logits.size(-1)),

@@ -280,7 +280,7 @@ class TinyLLaMAForCausalLM(VLMForCausalLM):
 
     def embed_tokens(self, input_ids: torch.Tensor) -> torch.Tensor:
         """将输入的 token ID 转换为词嵌入"""
-        return self.embed_tokens_(input_ids)
+        return self.embed_tokens_(input_ids)  # 修改为直接调用 self.embed_tokens_
 
     def decoder_stack(self) -> List[VLMDecoder]:
         """返回解码器层的列表"""
